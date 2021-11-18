@@ -1,0 +1,78 @@
+#!/bin/sh
+
+fail () {
+    RED='\033[0;31m'
+    NC='\033[0m' # No Color
+    echo "${RED}ERROR:$NC $1"
+    echo "${RED}PUSH FAILED$NC"
+    echo "Use the '--no-verify' flag to avoid verifying the push."
+    exit 1
+}
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $branch == pr/* ]]
+then
+    # Extract the ticket number from the branch
+    ticket=$(echo $branch | awk -F- '/^pr\/DEPLOY/ {print $2}')
+    if [ -n "$ticket" ] && [[ $ticket =~ ^[0-9]+$ ]]
+    then
+        z40=0000000000000000000000000000000000000000
+
+        while read local_ref local_sha remote_ref remote_sha
+        do
+            if [ "$local_sha" = $z40 ]
+            then
+                # Handle delete
+                :
+            else
+                if [ "$remote_sha" = $z40 ]
+                then
+                    # New branch, look at all commits on branch
+
+                    # Go through this branch's commit log and for each commit, check which branches 
+                    # contain (are descendants of) that commit. As soon as it finds a commit that has 
+                    # a descendant that is not the current branch, it prints the commit hash.
+                    shared_ancestor=$(git log --oneline \
+                        | cut -f 1 -d' ' \
+                        | (while read commit ; do
+                            other_branches="$(git branch --contains $commit | egrep -v '^\* ')"
+                            if [ -n "$other_branches" ] ; then
+                                echo $commit
+                                break
+                            fi
+                            done))
+
+                    # Range is commits on $branch and not elsewhere starting from shared ancestral commit
+                    range="$shared_ancestor..$branch"
+
+                    # Make sure only one commit is being pushed for new branch
+                    commits=$(git rev-list "$range")
+                    num=$(echo $commits | wc -w | awk '{ print $1 }')
+
+                    if [ "$num" = "0" ]
+                    then
+                        fail "No commits to push."
+                    fi
+
+                    if [ "$num" != "1" ]
+                    then
+                        fail "Found more than one commit in new branch ($num).\n -> ${commits//$'\n'/$'\n -> '}"
+                    fi
+                else
+                    # Update to existing branch, examine new commits
+                    # Range is commits on local and not remote
+                    range="$remote_sha..$local_sha"
+                fi
+
+                # Make sure each commit starts with DEPLOY-####
+                commits=$(git rev-list "$range" --not $(git rev-list --grep "^DEPLOY-$ticket " "$range"))
+                if [ -n "$commits" ]
+                then
+                    fail "Found non-standard commit(s) in $branch.\n -> ${commits//$'\n'/$'\n -> '}"
+                fi
+            fi
+        done
+    else
+        fail "Incorrect branch name, could not parse ticket number."
+    fi
+fi

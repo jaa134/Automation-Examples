@@ -1,0 +1,24 @@
+#!/bin/bash
+PROJECT_DIR=/Users/jacobalspaw/Desktop/Projects/udeploy/ucd-server
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $branch == pr/* ]]
+then
+    ESLINT_VERSION=$(npm list --prefix ${PROJECT_DIR} --depth=0 --parseable=true | grep eslint)
+    if [[ -z ${ESLINT_VERSION} ]]; then
+        echo "-----------------------------------------------------------"
+        echo "LINTING FAILED"
+        echo "Eslint is not installed! Please resolve npm packages first."
+        echo "-----------------------------------------------------------"
+        exit 1
+    fi
+
+    ant lint-js -Dresolve.no=y -Dlint.quiet=y -buildfile ${PROJECT_DIR}/build.xml
+    if [[ ! $? -eq 0 ]]; then
+        echo "-----------------------------------------------------------"
+        echo "LINTING FAILED"
+        echo "There are problems with your commit."
+        echo "-----------------------------------------------------------"
+        exit 1
+    fi
+fi

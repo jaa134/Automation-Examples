@@ -1,0 +1,23 @@
+#!/bin/sh
+
+fail () {
+    RED='\033[0;31m'
+    NC='\033[0m' # No Color
+    echo "${RED}ERROR:$NC $1"
+    echo "${RED}COMMIT FAILED$NC"
+    echo "Use the '--no-verify' flag to avoid verifying the commit."
+    exit 1
+}
+
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $branch == pr/* ]]
+then
+    ticket=$(echo $branch | awk -F- '/^pr\/DEPLOY/ {print $2}')
+    if [ -n "$ticket" ] && [[ $ticket =~ ^[0-9]+$ ]]
+    then
+        printf '%s %s' "DEPLOY-$ticket" "$(cat $1)" > $1
+    else
+        echo
+        fail "Incorrect branch name, could not parse ticket number."
+    fi
+fi
